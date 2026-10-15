@@ -1,0 +1,189 @@
+{
+  "name": "AI Lead Qualifier",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## AI Lead Qualifier\nInbound form leads are scored 1-10 by an LLM, logged to Google Sheets, and routed:\n- **Score 7+** → instant Slack alert to sales\n- **Below 7** → personalised AI auto-reply by email\n\n**Setup:** add OpenAI, Google Sheets, Slack and Gmail credentials, then pick your sheet and channel.",
+        "height": 220,
+        "width": 420,
+        "color": 4
+      },
+      "id": "1f0c6a52-0001-4c1e-9a10-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, -300]
+    },
+    {
+      "parameters": {
+        "formTitle": "Contact Sales",
+        "formDescription": "Tell us about your project and we'll get back to you within 24h.",
+        "formFields": {
+          "values": [
+            { "fieldLabel": "Name", "requiredField": true },
+            { "fieldLabel": "Email", "fieldType": "email", "requiredField": true },
+            { "fieldLabel": "Company" },
+            {
+              "fieldLabel": "Budget",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  { "option": "Under $1k" },
+                  { "option": "$1k - $5k" },
+                  { "option": "$5k - $20k" },
+                  { "option": "$20k+" }
+                ]
+              }
+            },
+            { "fieldLabel": "Message", "fieldType": "textarea", "requiredField": true }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1f0c6a52-0002-4c1e-9a10-000000000002",
+      "name": "Lead Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [0, 0],
+      "webhookId": "5b7e2d9a-3c41-4f8e-b6a2-9d0e1f2a3b4c"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a B2B sales assistant. Score inbound leads 1-10 on fit and buying intent (budget, clarity of need, urgency). Reply ONLY with JSON: {\"score\": number, \"category\": \"hot\" | \"warm\" | \"cold\", \"summary\": \"one sentence\", \"suggested_reply\": \"short friendly email reply to the lead, signed 'The Team'\"}"
+            },
+            {
+              "content": "=Name: {{ $json.Name }}\nCompany: {{ $json.Company }}\nBudget: {{ $json.Budget }}\nMessage: {{ $json.Message }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": { "temperature": 0.2 }
+      },
+      "id": "1f0c6a52-0003-4c1e-9a10-000000000003",
+      "name": "Score Lead (AI)",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "a1", "name": "submitted_at", "value": "={{ $now.toISO() }}", "type": "string" },
+            { "id": "a2", "name": "name", "value": "={{ $('Lead Form').item.json.Name }}", "type": "string" },
+            { "id": "a3", "name": "email", "value": "={{ $('Lead Form').item.json.Email }}", "type": "string" },
+            { "id": "a4", "name": "company", "value": "={{ $('Lead Form').item.json.Company }}", "type": "string" },
+            { "id": "a5", "name": "budget", "value": "={{ $('Lead Form').item.json.Budget }}", "type": "string" },
+            { "id": "a6", "name": "message", "value": "={{ $('Lead Form').item.json.Message }}", "type": "string" },
+            { "id": "a7", "name": "score", "value": "={{ $json.message.content.score }}", "type": "number" },
+            { "id": "a8", "name": "category", "value": "={{ $json.message.content.category }}", "type": "string" },
+            { "id": "a9", "name": "summary", "value": "={{ $json.message.content.summary }}", "type": "string" },
+            { "id": "a10", "name": "suggested_reply", "value": "={{ $json.message.content.suggested_reply }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1f0c6a52-0004-4c1e-9a10-000000000004",
+      "name": "Build Lead Record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "", "mode": "list" },
+        "sheetName": { "__rl": true, "value": "", "mode": "list" },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "1f0c6a52-0005-4c1e-9a10-000000000005",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [660, -120]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.score }}",
+              "rightValue": 7,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1f0c6a52-0006-4c1e-9a10-000000000006",
+      "name": "Hot Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [660, 100]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "", "mode": "list" },
+        "text": "=:fire: *Hot lead* ({{ $json.score }}/10)\n*{{ $json.name }}* from {{ $json.company }} ({{ $json.email }})\nBudget: {{ $json.budget }}\n> {{ $json.summary }}",
+        "otherOptions": {}
+      },
+      "id": "1f0c6a52-0007-4c1e-9a10-000000000007",
+      "name": "Alert Sales on Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "Thanks for reaching out!",
+        "emailType": "text",
+        "message": "={{ $json.suggested_reply }}",
+        "options": { "appendAttribution": false }
+      },
+      "id": "1f0c6a52-0008-4c1e-9a10-000000000008",
+      "name": "Send AI Auto-Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [880, 200]
+    }
+  ],
+  "connections": {
+    "Lead Form": { "main": [[{ "node": "Score Lead (AI)", "type": "main", "index": 0 }]] },
+    "Score Lead (AI)": { "main": [[{ "node": "Build Lead Record", "type": "main", "index": 0 }]] },
+    "Build Lead Record": {
+      "main": [[
+        { "node": "Log to Google Sheets", "type": "main", "index": 0 },
+        { "node": "Hot Lead?", "type": "main", "index": 0 }
+      ]]
+    },
+    "Hot Lead?": {
+      "main": [
+        [{ "node": "Alert Sales on Slack", "type": "main", "index": 0 }],
+        [{ "node": "Send AI Auto-Reply", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

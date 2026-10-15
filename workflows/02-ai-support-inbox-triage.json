@@ -1,0 +1,153 @@
+{
+  "name": "AI Support Inbox Triage",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## AI Support Inbox Triage\nEvery new support email is classified by an LLM and routed:\n- **Billing** → labelled for the finance team\n- **Technical** → AI writes a reply and saves it as a **Gmail draft** (a human reviews before sending)\n- **Sales** → posted to Slack\n- **Other** → labelled for manual review\n\n**Setup:** add Gmail, OpenAI and Slack credentials, then pick your labels and channel.",
+        "height": 260,
+        "width": 440,
+        "color": 4
+      },
+      "id": "2a7d3e10-0001-4b2f-8c20-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, -360]
+    },
+    {
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "simple": false,
+        "filters": {},
+        "options": {}
+      },
+      "id": "2a7d3e10-0002-4b2f-8c20-000000000002",
+      "name": "New Support Email",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "inputText": "=Subject: {{ $json.subject }}\n\n{{ $json.text }}",
+        "categories": {
+          "categories": [
+            { "category": "Billing", "description": "Invoices, refunds, payments, pricing or subscription questions" },
+            { "category": "Technical", "description": "Bugs, errors, login problems, how-to or setup questions" },
+            { "category": "Sales", "description": "New business inquiries, demo requests, partnerships" },
+            { "category": "Other", "description": "Anything else, including spam and newsletters" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2a7d3e10-0003-4b2f-8c20-000000000003",
+      "name": "Classify Email (AI)",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "model": { "__rl": true, "value": "gpt-4o-mini", "mode": "list", "cachedResultName": "gpt-4o-mini" },
+        "options": { "temperature": 0 }
+      },
+      "id": "2a7d3e10-0004-4b2f-8c20-000000000004",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [240, 220]
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('New Support Email').item.json.id }}",
+        "labelIds": []
+      },
+      "id": "2a7d3e10-0005-4b2f-8c20-000000000005",
+      "name": "Label: Billing",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [600, -260]
+    },
+    {
+      "parameters": {
+        "modelId": { "__rl": true, "value": "gpt-4o-mini", "mode": "list", "cachedResultName": "GPT-4O-MINI" },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a friendly, concise customer support agent. Write a helpful reply to the customer's technical issue. If you need more details (steps to reproduce, screenshots, account email), ask for them. Never promise refunds or timelines. Sign off as 'Support Team'. Output only the email body."
+            },
+            {
+              "content": "=Subject: {{ $('New Support Email').item.json.subject }}\n\n{{ $('New Support Email').item.json.text }}"
+            }
+          ]
+        },
+        "options": { "temperature": 0.4 }
+      },
+      "id": "2a7d3e10-0006-4b2f-8c20-000000000006",
+      "name": "Write Reply (AI)",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [600, -80]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "=Re: {{ $('New Support Email').item.json.subject }}",
+        "message": "={{ $json.message.content }}",
+        "options": {
+          "threadId": "={{ $('New Support Email').item.json.threadId }}",
+          "sendTo": "={{ $('New Support Email').item.json.from.value[0].address }}"
+        }
+      },
+      "id": "2a7d3e10-0007-4b2f-8c20-000000000007",
+      "name": "Save as Gmail Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [820, -80]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "", "mode": "list" },
+        "text": "=:moneybag: New sales inquiry from {{ $('New Support Email').item.json.from.text }}\n*{{ $('New Support Email').item.json.subject }}*",
+        "otherOptions": {}
+      },
+      "id": "2a7d3e10-0008-4b2f-8c20-000000000008",
+      "name": "Notify Sales on Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [600, 100]
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('New Support Email').item.json.id }}",
+        "labelIds": []
+      },
+      "id": "2a7d3e10-0009-4b2f-8c20-000000000009",
+      "name": "Label: Needs Review",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [600, 280]
+    }
+  ],
+  "connections": {
+    "New Support Email": { "main": [[{ "node": "Classify Email (AI)", "type": "main", "index": 0 }]] },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{ "node": "Classify Email (AI)", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Classify Email (AI)": {
+      "main": [
+        [{ "node": "Label: Billing", "type": "main", "index": 0 }],
+        [{ "node": "Write Reply (AI)", "type": "main", "index": 0 }],
+        [{ "node": "Notify Sales on Slack", "type": "main", "index": 0 }],
+        [{ "node": "Label: Needs Review", "type": "main", "index": 0 }]
+      ]
+    },
+    "Write Reply (AI)": { "main": [[{ "node": "Save as Gmail Draft", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}
